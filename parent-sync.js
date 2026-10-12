@@ -105,7 +105,7 @@ const FS_IDB_NAME = 'quran-fullsync-v2';
 const FS_UI_FIELDS = ['activeSection', 'activeSubject', 'view', 'lastBackupAt']; // تُنقل، لكنها لا تُعدّ «تعديلًا على البيانات»
 const FS_LS_WARN_CHARS = 2000000;
 
-const fsSim = { up: null, down: null, restore: null };
+const fsSim = { up: null, down: null, restore: null, conflict: null };
 
 function loadJSON(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (_) { return fallback; } }
 function saveJSON(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch (_) { return false; } }
@@ -192,7 +192,7 @@ const FS_FIELD_LABELS = {
   holidays: 'الإجازات', approvals: 'الاعتمادات', actual: 'الموعد الفعلي', view: 'الكشف المعروض', max: 'الدرجة العظمى',
   sections: 'الشعب', activeSection: 'الشعبة النشطة', activeSubject: 'المادة النشطة', coursework: 'درجات المواد',
   quranShare: 'نصيب القرآن', auditLog: 'سجل التعديلات', archives: 'الأرشيف', lastBackupAt: 'آخر نسخة احتياطية',
-  studentSupport: 'متابعة الطلاب', syncMarks: 'علامات المزامنة'
+  studentSupport: 'متابعة الطلاب', syncMarks: 'علامات المزامنة', weeklyNotices: 'سجل الرسائل الأسبوعية'
 };
 function fsSize(v) { const t = fsType(v); return t === 'array' ? v.length : t === 'object' ? Object.keys(v).length : t === 'undefined' ? '—' : 'قيمة'; }
 
@@ -365,7 +365,7 @@ async function fsPostReloadCheck() {
   const fpNow = stored ? fsFp(stored) : '';
   const kindText = { upload: 'الرفع الأول من هذا الجهاز', receive: 'الاستقبال من السحابة', restore: 'استعادة النسخة الاحتياطية', 'auto-receive': 'استقبال تلقائي لآخر نسخة من السحابة', 'restore-cloud': 'استعادة نسخة من سجل السحابة' }[pend.kind] || pend.kind;
   if (stored && memOk && fpNow === pend.expectedFp) {
-    if (pend.kind !== 'restore') saveJSON(FS_BASE_KEY, { contentFp: pend.contentFp, fp: pend.expectedFp, at: new Date().toISOString(), kind: pend.kind });
+    if (pend.kind !== 'restore') { saveJSON(FS_BASE_KEY, { contentFp: pend.contentFp, fp: pend.expectedFp, at: new Date().toISOString(), kind: pend.kind }); fsSaveBaseContent(stored); }
     localStorage.removeItem(FS_PENDING_KEY);
     try { await fsIdbDel('expected-pending'); } catch (_) {}
     const okb = fsBanner('<b>✓ نجح التحقق النهائي بعد إعادة التحميل (' + escapeHtml(kindText) + ').</b><br>بيانات التطبيق الآن مطابقة حقلًا بحقل وقيمةً بقيمة للنسخة المعتمدة. (' + (stored.students || []).length + ' سجل طالب)', true);
@@ -534,7 +534,7 @@ async function fsUpload(ui) {
       await fsReplaceLocal(payload, 'upload', bk.id);
       return;
     }
-    saveJSON(FS_BASE_KEY, { contentFp: meta.contentFp, fp, at: new Date().toISOString(), kind: 'upload' });
+    saveJSON(FS_BASE_KEY, { contentFp: meta.contentFp, fp, at: new Date().toISOString(), kind: 'upload' }); fsSaveBaseContent(payload);
     fsSim.up = null;
     ui.status.textContent = '✓ تم الرفع، وتطابقت نسخة السحابة مع هذا الجهاز حقلًا بحقل وقيمةً بقيمة.';
   } catch (e) { ui.status.textContent = 'توقف الرفع: ' + e.message; fsSim.up = null; }
@@ -583,7 +583,7 @@ async function fsSimulateReceive(ui) {
     dl.onclick = () => fsDownload(fsReportForDownload('محاكاة الاستقبال', checks), 'تقرير-محاكاة-الاستقبال'); ui.summary.appendChild(dl);
     if (allOk && !(guard && guard.same)) { fsSim.down = { fp: row.meta.fp, guard, at: Date.now() }; ui.downBtn.disabled = false; }
     ui.status.textContent = allOk ? (guard && guard.same ? 'هذا الجهاز مطابق للسحابة؛ لا حاجة للاستقبال.' : 'نجحت المحاكاة دون أي كتابة. زر الاستقبال الحقيقي أصبح متاحًا.') : 'لم يُكتب شيء.';
-    if (allOk && guard && guard.same && !loadJSON(FS_BASE_KEY, null)) saveJSON(FS_BASE_KEY, { contentFp: row.meta.contentFp, fp: row.meta.fp, at: new Date().toISOString(), kind: 'match' });
+    if (allOk && guard && guard.same && !loadJSON(FS_BASE_KEY, null)) { saveJSON(FS_BASE_KEY, { contentFp: row.meta.contentFp, fp: row.meta.fp, at: new Date().toISOString(), kind: 'match' }); fsSaveBaseContent(local); }
   } catch (e) { ui.status.textContent = 'تعذّرت المحاكاة: ' + e.message + ' (لم يُكتب شيء)'; }
 }
 
@@ -641,6 +641,10 @@ async function renderSyncTab(root) {
     <p id="fsState" class="muted"></p>
     <div class="summary-card"><label><input type="checkbox" id="fsAutoToggle"> <b>المزامنة التلقائية على هذا الجهاز</b></label>
       <p class="muted">عند فتح التطبيق يستقبل آخر نسخة تلقائيًا، وبعد كل رصد يرفع تلقائيًا خلال ثوانٍ. لا يدمج ولا يحذف شيئًا: إن وُجدت تعديلات على جهازين معًا يتوقف وينبّهك. الأزرار اليدوية أدناه للحالات الخاصة فقط.</p></div>
+    <div class="summary-card"><b>عند ظهور «تعارض»</b>
+      <p class="muted">اعرض الفروق أولًا (لا يكتب شيئًا)، ثم اعتمد نسخة واحدة كاملة. النسخة الأخرى لا تضيع: نسخة السحابة تُحفظ في «سجل النسخ»، ونسخة هذا الجهاز تُحفظ في «النسخ الاحتياطية».</p>
+      <button id="fsDiffBtn" type="button">عرض الفروق بين هذا الجهاز والسحابة (لا يكتب شيئًا)</button>
+      <div id="fsConflictActions" style="display:none;margin-top:8px"><button id="fsKeepLocal" type="button">اعتماد نسخة هذا الجهاز ورفعها</button> <button id="fsKeepCloud" type="button">اعتماد نسخة السحابة على هذا الجهاز</button></div></div>
     <div class="summary-card"><b>رفع بيانات هذا الجهاز إلى السحابة</b><br>
       <button id="fsSimUp" type="button">١. محاكاة الرفع والتحقق (لا يكتب شيئًا)</button>
       <button id="fsUp" type="button" disabled>٢. الرفع الحقيقي (يتفعّل بعد نجاح المحاكاة)</button></div>
@@ -654,13 +658,26 @@ async function renderSyncTab(root) {
     <details id="fsHistDetails"><summary>سجل النسخ في السحابة (للرجوع إلى نسخة سابقة)</summary>
       <p class="muted">قبل كل جلسة رصد تُحفظ نسخة من حالة البيانات تلقائيًا (آخر 30 نسخة). «معاينة» لا تكتب شيئًا، وتعرض ما سيتغير قبل أي استعادة.</p>
       <div id="fsHistList" style="overflow-x:auto"></div></details>
+    <details id="fsShareDetails"><summary>مشاركة للقراءة فقط لمدة 24 ساعة (باركود)</summary>
+      <p class="muted">لمن تريد أن يطّلع على الدرجات والغياب والتقارير دون أي صلاحية تعديل، كالمدير أو المشرف. لا تظهر له متابعة الطلاب ولا ملاحظاتك ولا قسما أولياء الأمور وإدارة البيانات. ينتهي الرابط بعد 24 ساعة تلقائيًا، ويمكنك إلغاؤه قبل ذلك.</p>
+      <label>اسم المستلم (اختياري): <input id="fsShareLabel" type="text" maxlength="60" placeholder="مثال: مدير المدرسة"></label>
+      <button id="fsShareCreate" type="button">إنشاء باركود مشاهدة لمدة 24 ساعة</button>
+      <div id="fsShareOut" style="margin:10px 0"></div>
+      <div id="fsShareList" style="overflow-x:auto"></div></details>
     <p id="fsStatus" class="muted" style="font-weight:bold"></p>
     <div id="fsSummary" style="overflow-x:auto;margin-top:12px"></div>
     <button id="fsRestoreBtn" type="button" disabled style="display:none"></button></div>
     <button id="paLogout" type="button">تسجيل خروج</button>`;
   const ui = { status: root.querySelector('#fsStatus'), summary: root.querySelector('#fsSummary'), upBtn: root.querySelector('#fsUp'), downBtn: root.querySelector('#fsDown'), restoreBtn: root.querySelector('#fsRestoreBtn') };
   ui.restoreBtn.onclick = () => fsRestoreCloudVersion(ui);
+  const cActions = root.querySelector('#fsConflictActions');
+  root.querySelector('#fsDiffBtn').onclick = () => fsShowConflict(ui, cActions);
+  root.querySelector('#fsKeepLocal').onclick = () => fsKeepLocal(ui);
+  root.querySelector('#fsKeepCloud').onclick = () => fsKeepCloud(ui);
   root.querySelector('#fsHistDetails').addEventListener('toggle', e => { if (e.target.open) fsRenderHistory(root, ui); });
+  const shareList = root.querySelector('#fsShareList');
+  root.querySelector('#fsShareDetails').addEventListener('toggle', e => { if (e.target.open) fsRenderViewerLinks(shareList); });
+  root.querySelector('#fsShareCreate').onclick = () => fsCreateViewerLink(root.querySelector('#fsShareLabel').value.trim(), root.querySelector('#fsShareOut'), () => fsRenderViewerLinks(shareList));
   root.querySelector('#fsState').textContent = fsDeviceStateText();
   const tg = root.querySelector('#fsAutoToggle'); tg.checked = fsAutoEnabled();
   tg.onchange = () => { localStorage.setItem(FS_AUTO_KEY, tg.checked ? '1' : '0'); if (tg.checked) fsAutoRun('toggle'); else fsBadge('المزامنة التلقائية متوقفة على هذا الجهاز', 'warn'); };
@@ -824,6 +841,458 @@ async function fsRenderHistory(root, ui) {
   } catch (e) { host.textContent = e.message; }
 }
 
+
+// ============================================================
+// مشاركة للقراءة فقط لمدة 24 ساعة (باركود)
+// الرمز يُولَّد على هذا الجهاز ولا يُرسَل إلى أي موقع آخر؛ يُحفظ في السحابة بصمته فقط.
+// الصلاحية والإلغاء يُفحصان في الخادم (get_shared_gradebook)، والمشاهد لا يملك أي صلاحية كتابة.
+// ============================================================
+const VIEWER_URL = PARENT_PORTAL_URL.replace(/student\.html.*$/, 'viewer.html');
+const QR_LIB_URL = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+
+function fsB64url(bytes) { let s = ''; bytes.forEach(b => { s += String.fromCharCode(b); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+async function fsSha256Hex(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function fsQrSvg(text) {
+  if (!window.qrcode) await loadScript(QR_LIB_URL);
+  const qr = window.qrcode(0, 'M'); qr.addData(text); qr.make();
+  return qr.createSvgTag(5, 3);
+}
+
+async function fsCreateViewerLink(label, out, onDone) {
+  out.textContent = 'جارٍ إنشاء الرابط...';
+  try {
+    const token = fsB64url(crypto.getRandomValues(new Uint8Array(32)));
+    const hash = await fsSha256Hex(token);
+    const { data, error } = await supa.from('viewer_links').insert({ token_hash: hash, label: label || null }).select('id,expires_at').single();
+    if (error) throw new Error(error.message);
+    const url = VIEWER_URL + '#t=' + token;
+    out.replaceChildren();
+    const head = document.createElement('div');
+    head.innerHTML = '<b>باركود المشاهدة جاهز</b> — ' + (label ? 'للمستلم: ' + escapeHtml(label) + ' — ' : '') + 'ينتهي ' + escapeHtml(new Date(data.expires_at).toLocaleString('ar-SA'));
+    out.appendChild(head);
+    const qrBox = document.createElement('div'); qrBox.style.cssText = 'margin:10px auto;text-align:center;background:#fff;display:inline-block;padding:6px;border-radius:8px';
+    try { qrBox.innerHTML = await fsQrSvg(url); } catch (_) { qrBox.textContent = 'تعذّر رسم الباركود؛ استخدم الرابط أدناه.'; }
+    const wrap = document.createElement('div'); wrap.style.textAlign = 'center'; wrap.appendChild(qrBox); out.appendChild(wrap);
+    const linkRow = document.createElement('div'); linkRow.style.cssText = 'direction:ltr;text-align:left;word-break:break-all;font-size:12px;background:#f3f6f4;padding:6px;border-radius:6px';
+    linkRow.textContent = url; out.appendChild(linkRow);
+    const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'نسخ الرابط';
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(url); copy.textContent = 'تم النسخ ✓'; } catch (_) { copy.textContent = 'انسخه يدويًا من السطر أعلاه'; } };
+    out.appendChild(copy);
+    const note = document.createElement('p'); note.className = 'muted';
+    note.textContent = 'صوّر الباركود أو انسخ الرابط الآن؛ لا يمكن عرضه مرة أخرى بعد إغلاق هذه الصفحة لأنه لا يُحفظ في أي مكان. من يملكه يرى الدرجات والغياب والتقارير لجميع الطلاب حتى انتهاء المدة، دون أي صلاحية تعديل.';
+    out.appendChild(note);
+    onDone && onDone();
+  } catch (e) { out.textContent = 'تعذّر إنشاء الرابط: ' + e.message; }
+}
+
+async function fsRenderViewerLinks(host) {
+  host.textContent = 'جارٍ التحميل...';
+  try {
+    const { data, error } = await supa.from('viewer_links').select('id,label,created_at,expires_at,revoked,last_used_at,use_count').order('created_at', { ascending: false }).limit(20);
+    if (error) throw new Error(error.message);
+    host.replaceChildren();
+    if (!data || !data.length) { host.textContent = 'لا توجد روابط مشاهدة بعد.'; return; }
+    const t = document.createElement('table'); t.style.cssText = 'width:100%;min-width:560px';
+    t.innerHTML = '<thead><tr><th>المستلم</th><th>أُنشئ</th><th>الحالة</th><th>مرات الفتح</th><th></th></tr></thead><tbody></tbody>';
+    for (const r of data) {
+      const active = !r.revoked && new Date(r.expires_at).getTime() > Date.now();
+      const state = r.revoked ? 'أُلغي' : active ? 'نشط حتى ' + new Date(r.expires_at).toLocaleString('ar-SA') : 'انتهى';
+      const tr = document.createElement('tr');
+      for (const v of [r.label || '—', new Date(r.created_at).toLocaleString('ar-SA'), state, (r.use_count || 0) + (r.last_used_at ? ' (آخرها ' + new Date(r.last_used_at).toLocaleString('ar-SA') + ')' : '')]) {
+        const td = document.createElement('td'); td.textContent = String(v); tr.appendChild(td);
+      }
+      const td = document.createElement('td');
+      if (active) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = 'إلغاء الآن';
+        b.onclick = async () => {
+          if (!confirm('إلغاء هذا الرابط فورًا؟ لن يستطيع صاحبه فتح البيانات بعد الآن.')) return;
+          const { error: ue } = await supa.from('viewer_links').update({ revoked: true }).eq('id', r.id);
+          if (ue) alert('تعذّر الإلغاء: ' + ue.message);
+          fsRenderViewerLinks(host);
+        };
+        td.appendChild(b);
+      }
+      tr.appendChild(td); t.tBodies[0].appendChild(tr);
+    }
+    host.appendChild(t);
+  } catch (e) {
+    host.textContent = /viewer_links|relation|does not exist|schema cache/i.test(e.message)
+      ? 'ميزة المشاركة تحتاج تجهيز قاعدة البيانات أولًا (ملف viewer-links.sql).'
+      : 'تعذّرت قراءة الروابط: ' + e.message;
+  }
+}
+
+
+// ============================================================
+// حل التعارض: عرض الفروق بأسماء الطلاب والخانات، ثم اعتماد نسخة واحدة كاملة.
+// لا دمج. النسخة غير المعتمدة تبقى محفوظة: نسخة السحابة في «سجل النسخ»، ونسخة الجهاز في «النسخ الاحتياطية».
+// وتُحفظ على كل جهاز نسخة «آخر مزامنة» حتى يبيّن التقرير أي الطرفين غيّر كل خانة.
+// ============================================================
+async function fsSaveBaseContent(db) {
+  try { if (db) await fsIdbPut({ id: 'base-content', kind: 'base', at: new Date().toISOString(), contentFp: fsContentFp(db), data: db }); } catch (_) {}
+}
+async function fsLoadBaseContent() {
+  try {
+    const base = loadJSON(FS_BASE_KEY, null), item = await fsIdbGet('base-content');
+    if (base && item && item.contentFp === base.contentFp) return item.data;
+  } catch (_) {}
+  return null;
+}
+
+function fsKeyDescribe(bucket, key, stu) {
+  const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+  const who = id => (stu[id] ? stu[id].name + ' — ' + (stu[id].section || '') : id);
+  const term = (t, p) => 'الفصل ' + (+t + 1) + ' / الفترة ' + (+p + 1);
+  let p = String(key).split('|');
+  if (bucket === 'grades' || bucket === 'absences') { const [t, pp, w, d, id] = p; return [who(id), (bucket === 'grades' ? 'تسميع القرآن' : 'غياب') + ' — ' + term(t, pp) + ' — الأسبوع ' + (+w + 1) + ' ' + (DAYS[+d] || '')]; }
+  if (bucket === 'tests' || bucket === 'approvals') { const [t, pp, id] = p; return [who(id), (bucket === 'tests' ? 'اختبار القرآن' : 'اعتماد') + ' — ' + term(t, pp)]; }
+  if (bucket === 'holidays') { const [t, pp, w, d] = p; return ['—', 'إجازة — ' + term(t, pp) + ' — الأسبوع ' + (+w + 1) + ' ' + (DAYS[+d] || '')]; }
+  if (bucket === 'coursework') {
+    let star = false; if (p[0] === 'star') { star = true; p = p.slice(1); }
+    const [subj, t, pp, id, cat, i] = p;
+    return [who(id), fsBreakdownLabel(subj + '|' + cat) + ' — ' + term(t, pp) + ' — خانة ' + (+i + 1) + (star ? ' (نجمة)' : '')];
+  }
+  return ['—', (FS_FIELD_LABELS[bucket] || bucket) + ' ' + key];
+}
+function fsShowVal(v) { return v === undefined ? '—' : v === true ? '✓' : v === false ? '✗' : typeof v === 'object' ? 'بيانات' : String(v); }
+
+function fsReadableDiff(local, cloud, base) {
+  const rows = []; let count = 0, onlyLocal = 0, onlyCloud = 0, both = 0;
+  const same = (x, y) => fsCanon(x === undefined ? null : x) === fsCanon(y === undefined ? null : y);
+  const side = (bv, lv, cv) => {
+    if (!base) return 'غير معروف';
+    const l = !same(lv, bv), c = !same(cv, bv);
+    if (l && c) { both++; return 'الطرفان'; }
+    if (l) { onlyLocal++; return 'هذا الجهاز'; }
+    if (c) { onlyCloud++; return 'السحابة'; }
+    return '—';
+  };
+  const stu = {};
+  for (const s of [...(cloud.students || []), ...(local.students || [])]) stu[s.id] = s;
+  for (const b of ['grades', 'absences', 'tests', 'approvals', 'holidays', 'coursework']) {
+    const L = local[b] || {}, C = cloud[b] || {}, B = (base && base[b]) || {};
+    for (const k of new Set([...Object.keys(L), ...Object.keys(C)])) {
+      if (same(L[k], C[k])) continue;
+      count++;
+      const [who, what] = fsKeyDescribe(b, k, stu);
+      rows.push([who, what, fsShowVal(L[k]), fsShowVal(C[k]), side(B[k], L[k], C[k])]);
+    }
+  }
+  const byId = arr => Object.fromEntries((arr || []).map(s => [s.id, s]));
+  const Ls = byId(local.students), Cs = byId(cloud.students), Bs = byId(base && base.students);
+  for (const id of new Set([...Object.keys(Ls), ...Object.keys(Cs)])) {
+    if (same(Ls[id], Cs[id])) continue;
+    count++;
+    const s = Ls[id] || Cs[id];
+    rows.push([s.name + ' — ' + (s.section || ''), 'سجل الطالب (' + ((window.__app && window.__app.subjectNames && window.__app.subjectNames[s.subject]) || s.subject) + ')', Ls[id] ? (Cs[id] ? 'معدّل' : 'موجود') : '—', Cs[id] ? (Ls[id] ? 'معدّل' : 'موجود') : '—', side(Bs[id], Ls[id], Cs[id])]);
+  }
+  const lIds = (local.students || []).map(s => s.id), cIds = (cloud.students || []).map(s => s.id);
+  if (!same(lIds, cIds) && same([...lIds].sort(), [...cIds].sort())) {
+    count++; rows.push(['—', 'ترتيب الطلاب', 'مختلف', 'مختلف', side((base && base.students || []).map(s => s.id), (local.students || []).map(s => s.id), (cloud.students || []).map(s => s.id))]);
+  }
+  const skip = new Set(['grades', 'absences', 'tests', 'approvals', 'holidays', 'coursework', 'students', ...FS_UI_FIELDS]);
+  for (const f of new Set([...Object.keys(local), ...Object.keys(cloud)])) {
+    if (skip.has(f) || same(local[f], cloud[f])) continue;
+    if (f === 'studentSupport') {
+      const L = local[f] || {}, C = cloud[f] || {}, B = (base && base[f]) || {};
+      for (const uid of new Set([...Object.keys(L), ...Object.keys(C)])) {
+        if (same(L[uid], C[uid])) continue;
+        count++;
+        const s = (local.students || []).find(x => x.studentUid === uid) || (cloud.students || []).find(x => x.studentUid === uid);
+        rows.push([s ? s.name : uid, 'متابعة الطالب', L[uid] ? 'موجود' : '—', C[uid] ? 'موجود' : '—', side(B[uid], L[uid], C[uid])]);
+      }
+      continue;
+    }
+    if (f === 'auditLog') continue; // سجل التعديلات يتبع النسخة المعتمدة ولا يُعرض كفرق
+    count++;
+    rows.push(['—', FS_FIELD_LABELS[f] || f, fsShowVal(local[f]), fsShowVal(cloud[f]), side(base && base[f], local[f], cloud[f])]);
+  }
+  return { rows, count, onlyLocal, onlyCloud, both, hasBase: !!base };
+}
+
+async function fsShowConflict(ui, actions) {
+  actions.style.display = 'none';
+  ui.status.textContent = 'جارٍ مقارنة هذا الجهاز بالسحابة... لا يُكتب أي شيء.';
+  try {
+    const { stored: local, memMatches } = fsSourceDb();
+    if (!memMatches) throw new Error('أعد تحميل الصفحة ثم أعد المحاولة.');
+    const row = await fsFetchRow(FULL_ROW_ID);
+    if (!row || !row.db) throw new Error('لا توجد نسخة في السحابة.');
+    const base = await fsLoadBaseContent();
+    const d = fsReadableDiff(local, row.db, base);
+    ui.summary.replaceChildren();
+    const h = document.createElement('div');
+    const when = row.meta && row.meta.uploadedAt ? new Date(row.meta.uploadedAt).toLocaleString('ar-SA') : '—';
+    const dev = row.meta ? ({ ipad: 'الآيباد', laptop: 'اللابتوب' }[row.meta.deviceKind] || fsDeviceLabel(row.meta.device) || 'جهاز آخر') : '—';
+    h.innerHTML = '<b>الفروق بين هذا الجهاز والسحابة: ' + d.count + ' خانة</b><br><span class="muted">آخر رفع إلى السحابة: ' + escapeHtml(when) + ' من ' + escapeHtml(dev) + '</span>' +
+      (d.hasBase ? '<br>تغيّر على هذا الجهاز فقط: ' + d.onlyLocal + ' • في السحابة فقط: ' + d.onlyCloud + ' • على الطرفين: ' + d.both : '<br><span class="muted">(لا تتوفر نسخة آخر مزامنة على هذا الجهاز، فعمود «تغيّر في» غير معروف هذه المرة.)</span>');
+    ui.summary.appendChild(h);
+    if (d.count) {
+      const t = document.createElement('table'); t.style.cssText = 'width:100%;min-width:640px;margin-top:8px';
+      t.innerHTML = '<thead><tr><th>الطالب</th><th>الخانة</th><th>هذا الجهاز</th><th>السحابة</th><th>تغيّر في</th></tr></thead><tbody></tbody>';
+      for (const r of d.rows.slice(0, 400)) { const tr = document.createElement('tr'); for (const v of r) { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); } t.tBodies[0].appendChild(tr); }
+      ui.summary.appendChild(t);
+      if (d.rows.length > 400) { const m = document.createElement('p'); m.className = 'muted'; m.textContent = 'عُرضت أول 400 خانة من ' + d.rows.length + '.'; ui.summary.appendChild(m); }
+      actions.style.display = '';
+      ui.status.textContent = 'لم يُكتب شيء. راجع الجدول ثم اختر النسخة التي تعتمدها.';
+    } else {
+      ui.status.textContent = 'لا توجد فروق في الدرجات أو البيانات؛ سيُصلح هذا تلقائيًا.';
+      saveJSON(FS_BASE_KEY, { contentFp: row.meta.contentFp, fp: row.meta.fp, at: new Date().toISOString(), kind: 'match' });
+      fsSaveBaseContent(local);
+      fsBadge('✓ متزامن', 'ok');
+    }
+    fsSim.conflict = { cloudFp: row.meta.fp, localFp: fsFp(local) };
+  } catch (e) { ui.status.textContent = 'تعذّرت المقارنة: ' + e.message + ' (لم يُكتب شيء)'; }
+}
+
+async function fsKeepLocal(ui) {
+  const c = fsSim.conflict; if (!c) return;
+  try {
+    const { stored: local, memMatches } = fsSourceDb();
+    if (!memMatches || fsFp(local) !== c.localFp) throw new Error('تغيّرت بيانات هذا الجهاز؛ اعرض الفروق من جديد.');
+    if (!(local.syncMarks && local.syncMarks.islamicTestsReset)) throw new Error('هذا الجهاز لم يُكمل المزامنة الأولى؛ لا يمكن اعتماده.');
+    const current = await fsFetchRow(FULL_ROW_ID);
+    if (!current || current.meta.fp !== c.cloudFp) throw new Error('تغيّرت السحابة؛ اعرض الفروق من جديد.');
+    const typed = prompt('ستُعتمد نسخة هذا الجهاز كاملة وتُرفع إلى السحابة، ثم يستقبلها الجهاز الآخر.\nنسخة السحابة الحالية ستُحفظ في «سجل النسخ» ويمكن استعادتها.\nللمتابعة اكتب: اعتماد');
+    if ((typed || '').trim() !== 'اعتماد') { ui.status.textContent = 'أُلغي. لم يتغير شيء.'; return; }
+    const checks = [], check = (ok, label) => { checks.push({ ok: !!ok, label }); return ok; };
+    const plan = fsBuildPayload(local, new Date().toISOString());
+    fsVerifyPayload(local, plan, check);
+    if (plan.firstTransfer || !checks.every(x => x.ok)) throw new Error('فشل فحص سلامة: ' + checks.filter(x => !x.ok).map(x => x.label).join('، '));
+    ui.status.textContent = 'نسخة احتياطية...';
+    await fsMakeBackup('اعتماد-هذا-الجهاز', { full: current });
+    ui.status.textContent = 'حفظ نسخة السحابة الحالية في سجل النسخ...';
+    await fsSnapshotCloud(current, 'قبل اعتماد نسخة جهاز في تعارض', true);
+    const meta = fsMakeMeta(plan.payload, local, plan);
+    await fsPushPayload(plan.payload, meta, current, t => { ui.status.textContent = t; });
+    saveJSON(FS_BASE_KEY, { contentFp: meta.contentFp, fp: meta.fp, at: new Date().toISOString(), kind: 'keep-local' });
+    fsSaveBaseContent(plan.payload);
+    fsSim.conflict = null;
+    ui.status.textContent = '✓ اعتُمدت نسخة هذا الجهاز ورُفعت وتطابقت السحابة. افتح التطبيق على الجهاز الآخر ليستقبلها.';
+    fsBadge('✓ متزامن', 'ok');
+  } catch (e) { ui.status.textContent = 'توقف: ' + e.message; }
+}
+
+async function fsKeepCloud(ui) {
+  const c = fsSim.conflict; if (!c) return;
+  try {
+    const row = await fsFetchRow(FULL_ROW_ID);
+    if (!row || row.meta.fp !== c.cloudFp) throw new Error('تغيّرت السحابة؛ اعرض الفروق من جديد.');
+    const checks = [], check = (ok, label) => { checks.push({ ok: !!ok, label }); return ok; };
+    fsVerifyCloudRow(row, check);
+    if (!checks.every(x => x.ok)) throw new Error('نسخة السحابة لم تجتز فحص السلامة.');
+    const typed = prompt('ستُستبدل بيانات هذا الجهاز بنسخة السحابة كاملة.\nنسخة هذا الجهاز الحالية ستُحفظ كنسخة احتياطية (ملف + داخل المتصفح) ويمكن استعادتها.\nللمتابعة اكتب: اعتماد');
+    if ((typed || '').trim() !== 'اعتماد') { ui.status.textContent = 'أُلغي. لم يتغير شيء.'; return; }
+    const bk = await fsMakeBackup('اعتماد-السحابة', { full: row });
+    await fsReplaceLocal(row.db, 'receive', bk.id);
+  } catch (e) { ui.status.textContent = 'توقف: ' + e.message; }
+}
+
+
+// ============================================================
+// التقرير الأسبوعي للقرآن: خطط علاجية (أقل من 35٪) وخطابات شكر (الدرجة الكاملة دون غياب)
+// يُراجعها المعلم ويعدّلها، ولا يُرسَل شيء إلا بعد ضغط «اعتماد وإرسال».
+// تُسجَّل الإرسالات داخل البيانات (db.weeklyNotices) فتنتقل للجهاز الآخر ولا تتكرر.
+// ============================================================
+const WN_THRESHOLD = 35;
+const WN_DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+const WN_WEEKS = ['الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع'];
+const WN_DAY_MAX = 7;
+const wnState = { items: {}, links: null };
+
+function wnWeekLabel(t, p, w) { return 'الفصل ' + (t + 1) + ' — الفترة ' + (p + 1) + ' — الأسبوع ' + WN_WEEKS[w]; }
+function wnTag(t, p, w) { return [t, p, w].join('|'); }
+
+function wnCompute(t, p, w) {
+  const app = window.__app, db = app.db;
+  const out = { remedial: [], thanks: [], incomplete: [], middle: 0, reqDays: [] };
+  out.reqDays = [0, 1, 2, 3, 4].filter(d => !(w === 6 && d === 4) && !db.holidays[[t, p, w, d].join('|')]);
+  if (!out.reqDays.length) return out;
+  const qs = db.students.filter(s => (s.subject || 'quran') === 'quran' && (s.status || 'active') === 'active');
+  for (const s of qs) {
+    let sum = 0, abs = 0, graded = 0; const cells = [], missing = [];
+    for (const d of out.reqDays) {
+      const k = [t, p, w, d, s.id].join('|');
+      if (db.absences[k]) { abs++; cells.push(WN_DAYS[d] + ': غياب'); }
+      else if (db.grades[k]) { const v = Number(db.grades[k].value) || 0; sum += v; graded++; cells.push(WN_DAYS[d] + ': ' + v); }
+      else { missing.push(WN_DAYS[d]); cells.push(WN_DAYS[d] + ': لم يُرصد'); }
+    }
+    const max = WN_DAY_MAX * out.reqDays.length, pct = sum / max * 100;
+    const item = { uid: s.studentUid, name: app.cleanName(s.name), section: s.section || db.sections[0], sum, max, pct, abs, graded, cells, missing };
+    if (missing.length) out.incomplete.push(item);
+    else if (pct < WN_THRESHOLD) out.remedial.push(item);
+    else if (abs === 0 && sum === max) out.thanks.push(item);
+    else out.middle++;
+  }
+  const sort = (a, b) => a.section.localeCompare(b.section, 'ar') || a.name.localeCompare(b.name, 'ar');
+  out.remedial.sort(sort); out.thanks.sort(sort); out.incomplete.sort(sort);
+  return out;
+}
+
+function wnRemedialText(it, label) {
+  const avg = it.graded ? (it.sum / it.graded) : 0;
+  const needs = [];
+  if (it.abs) needs.push('• الالتزام بالحضور: غاب ' + it.abs + (it.abs === 1 ? ' يومًا' : ' أيام') + ' هذا الأسبوع، وكل غياب يُفقده درجة التسميع لذلك اليوم.');
+  if (it.graded && avg < 3.5) needs.push('• تقوية الحفظ قبل الحصة: متوسط درجته في أيام التسميع ' + avg.toFixed(1) + ' من ' + WN_DAY_MAX + '.');
+  else if (it.graded) needs.push('• المحافظة على مستوى التسميع في الأيام التي حضرها، مع تعويض ما فاته.');
+  const plan = [
+    'تسميع المقطع المقرر لابنكم في البيت يوميًا قبل يوم الحصة (10 إلى 15 دقيقة).',
+    'الاستماع إلى المقطع بصوت قارئ متقن مرتين يوميًا لتثبيت الحفظ وصحة النطق.',
+    'مراجعة ما حُفظ هذا الأسبوع حتى لا يُنسى.'
+  ];
+  if (it.abs) plan.push('الحرص على حضوره جميع الحصص، وإبلاغ المعلم بأي عذر.');
+  return ['الخطة العلاجية الأسبوعية — القرآن الكريم',
+    'الطالب: ' + it.name + ' — ' + it.section,
+    label,
+    'نتيجة الأسبوع: ' + it.sum + ' من ' + it.max + ' (' + Math.round(it.pct) + '٪)، وهي دون الحد المطلوب ' + WN_THRESHOLD + '٪.',
+    'تفاصيل الأيام: ' + it.cells.join('، ') + '.',
+    '',
+    'ما يحتاجه ابنكم:',
+    ...needs,
+    '',
+    'المطلوب خلال الأسبوع القادم:',
+    ...plan.map((x, i) => (i + 1) + '. ' + x),
+    '',
+    'ومن جهة المعلم: متابعته يوميًا في الحصة، وإتاحة فرصة لتعويض التسميع.',
+    'نسأل الله لابنكم التوفيق والسداد.'].join('\n');
+}
+
+function wnThanksText(it, label) {
+  return ['خطاب شكر وعرفان',
+    'نتقدم بالشكر والتقدير لابنكم الطالب ' + it.name + ' (' + it.section + ')',
+    'على إتمامه تسميع ' + label.replace(/^.*— الأسبوع /, 'الأسبوع ') + ' كاملًا بالدرجة الكاملة (' + it.sum + ' من ' + it.max + ') دون أي غياب.',
+    'ونشكر لكم حرصكم ومتابعتكم، فهذا ثمرة جهدكم معه.',
+    'نسأل الله أن يجعله من أهل القرآن الذين هم أهل الله وخاصته.',
+    '',
+    'معلم القرآن الكريم'].join('\n');
+}
+
+async function wnLoadLinks() {
+  try {
+    if (!isSupabaseConfigured()) return null;
+    await ensureLibs();
+    const { data: sess } = await supa.auth.getSession();
+    if (!sess || !sess.session) return null;
+    const { data, error } = await supa.from('parent_links').select('student_id,parent_uid');
+    if (error) return null;
+    const m = new Map();
+    for (const l of data || []) { if (!m.has(l.student_id)) m.set(l.student_id, []); m.get(l.student_id).push(l.parent_uid); }
+    return m;
+  } catch (_) { return null; }
+}
+
+function wnRender(host) {
+  const app = window.__app; if (!app || !host) return;
+  const a = app.db.actual;
+  host.innerHTML = `<div class="summary-card"><details id="wnDetails" open><summary><b>التقرير الأسبوعي: الخطط العلاجية وخطابات الشكر (القرآن الكريم)</b></summary>
+    <p class="muted">خطة علاجية لمن نتيجته في الأسبوع أقل من ${WN_THRESHOLD}٪، وخطاب شكر لمن أتم الأسبوع بالدرجة الكاملة دون غياب. راجع الكشفين وعدّل النص إن شئت؛ لا يُرسل شيء قبل «اعتماد وإرسال».</p>
+    <label>الفصل <select id="wnT"><option value="0">الأول</option><option value="1">الثاني</option></select></label>
+    <label>الفترة <select id="wnP"><option value="0">الأولى</option><option value="1">الثانية</option></select></label>
+    <label>الأسبوع <select id="wnW">${WN_WEEKS.map((n, i) => `<option value="${i}">${n}</option>`).join('')}</select></label>
+    <button id="wnBuild" type="button">تجهيز الكشفين</button>
+    <div id="wnOut" style="overflow-x:auto;margin-top:10px"></div></details></div>`;
+  host.querySelector('#wnT').value = a.t; host.querySelector('#wnP').value = a.p; host.querySelector('#wnW').value = a.w;
+  host.querySelector('#wnBuild').onclick = () => wnBuild(host);
+}
+
+async function wnBuild(host) {
+  const app = window.__app, db = app.db;
+  const t = +host.querySelector('#wnT').value, p = +host.querySelector('#wnP').value, w = +host.querySelector('#wnW').value;
+  const out = host.querySelector('#wnOut');
+  out.textContent = 'جارٍ التجهيز...';
+  const r = wnCompute(t, p, w), label = wnWeekLabel(t, p, w), tag = wnTag(t, p, w);
+  if (!r.reqDays.length) { out.textContent = 'لا توجد أيام تسميع مطلوبة في هذا الأسبوع (إجازة أو اختبار).'; return; }
+  wnState.links = await wnLoadLinks();
+  const sent = db.weeklyNotices || {};
+  wnState.items = {}; wnState.week = { t, p, w, label, tag };
+  out.replaceChildren();
+  const sum = document.createElement('p');
+  sum.innerHTML = '<b>' + escapeHtml(label) + '</b> — أيام التسميع المطلوبة: ' + r.reqDays.map(d => WN_DAYS[d]).join('، ') +
+    '<br>خطط علاجية: <b>' + r.remedial.length + '</b> • خطابات شكر: <b>' + r.thanks.length + '</b> • بين ذلك: ' + r.middle + ' • لم يكتمل رصدهم: ' + r.incomplete.length +
+    (wnState.links ? '' : '<br><span style="color:#b42318">تعذّرت معرفة أولياء الأمور المرتبطين (سجّل الدخول من «بوابة أولياء الأمور»). يمكنك المراجعة والطباعة الآن، والإرسال بعد تسجيل الدخول.</span>');
+  out.appendChild(sum);
+  if (r.incomplete.length) {
+    const inc = document.createElement('details');
+    inc.innerHTML = '<summary style="color:#7a5600">طلاب لم يكتمل رصد أسبوعهم (' + r.incomplete.length + ') — أكمل رصدهم ثم أعد التجهيز</summary>';
+    const ul = document.createElement('ul');
+    for (const it of r.incomplete) { const li = document.createElement('li'); li.textContent = it.name + ' — ' + it.section + ': لم يُرصد ' + it.missing.join('، '); ul.appendChild(li); }
+    inc.appendChild(ul); out.appendChild(inc);
+  }
+  const table = (title, list, type) => {
+    const h = document.createElement('h4'); h.textContent = title + ' (' + list.length + ')'; out.appendChild(h);
+    if (!list.length) { const m = document.createElement('p'); m.className = 'muted'; m.textContent = 'لا يوجد.'; out.appendChild(m); return; }
+    const tb = document.createElement('table'); tb.style.cssText = 'width:100%;min-width:760px';
+    tb.innerHTML = '<thead><tr><th style="width:40px">إرسال</th><th>الطالب</th><th>النتيجة</th><th>ولي الأمر</th><th>النص الذي سيُرسل (يمكن تعديله)</th></tr></thead><tbody></tbody>';
+    for (const it of list) {
+      const id = type + '|' + it.uid, doneKey = tag + '|' + it.uid + '|' + type, already = sent[doneKey];
+      const parents = wnState.links ? (wnState.links.get(it.uid) || []) : null;
+      const text = type === 'remedial' ? wnRemedialText(it, label) : wnThanksText(it, label);
+      const tr = document.createElement('tr');
+      const c0 = document.createElement('td'), cb = document.createElement('input'); cb.type = 'checkbox';
+      cb.checked = !already && (!parents || parents.length > 0); cb.disabled = !!already || (parents && !parents.length);
+      c0.appendChild(cb);
+      const c1 = document.createElement('td'); c1.textContent = it.name + ' — ' + it.section;
+      const c2 = document.createElement('td'); c2.textContent = it.sum + ' / ' + it.max + ' (' + Math.round(it.pct) + '٪)' + (it.abs ? ' — غياب ' + it.abs : '');
+      const c3 = document.createElement('td'); c3.textContent = already ? '✓ أُرسل ' + new Date(already.at).toLocaleDateString('ar-SA') : parents === null ? 'غير معروف' : parents.length ? 'مرتبط' : 'لا يوجد ولي أمر مرتبط';
+      const c4 = document.createElement('td'), ta = document.createElement('textarea'); ta.value = text; ta.rows = type === 'remedial' ? 9 : 5; ta.style.cssText = 'width:100%;min-width:320px;font:13px Tahoma'; c4.appendChild(ta);
+      tr.append(c0, c1, c2, c3, c4); tb.tBodies[0].appendChild(tr);
+      wnState.items[id] = { it, type, cb, ta, parents, doneKey };
+    }
+    out.appendChild(tb);
+  };
+  table('كشف الخطط العلاجية (أقل من ' + WN_THRESHOLD + '٪)', r.remedial, 'remedial');
+  table('كشف خطابات الشكر والعرفان (الدرجة الكاملة دون غياب)', r.thanks, 'thanks');
+  const bar = document.createElement('div'); bar.style.marginTop = '10px';
+  const send = document.createElement('button'); send.type = 'button'; send.textContent = 'اعتماد وإرسال المحدد إلى أولياء الأمور';
+  const pr = document.createElement('button'); pr.type = 'button'; pr.textContent = 'طباعة الكشفين';
+  const st = document.createElement('p'); st.className = 'muted'; st.id = 'wnStatus';
+  send.onclick = () => wnSend(host, st); pr.onclick = () => wnPrint();
+  bar.append(send, document.createTextNode(' '), pr, st); out.appendChild(bar);
+}
+
+async function wnSend(host, st) {
+  const app = window.__app, db = app.db;
+  const chosen = Object.values(wnState.items).filter(x => x.cb.checked && !x.cb.disabled);
+  if (!chosen.length) { st.textContent = 'لم تحدد أي طالب للإرسال.'; return; }
+  if (!wnState.links) { st.textContent = 'سجّل الدخول من «بوابة أولياء الأمور» أولًا، ثم أعد التجهيز.'; return; }
+  const rem = chosen.filter(x => x.type === 'remedial').length, th = chosen.length - rem;
+  if (!confirm('سيُرسل إلى أولياء الأمور المرتبطين: ' + rem + ' خطة علاجية و' + th + ' خطاب شكر عن ' + wnState.week.label + '.\nمتابعة؟')) return;
+  db.weeklyNotices = db.weeklyNotices || {};
+  let ok = 0, fail = 0;
+  for (const x of chosen) {
+    const body = x.ta.value.trim(); if (!body) continue;
+    let good = true;
+    for (const pu of x.parents || []) {
+      const { error } = await supa.from('parent_messages').insert({ student_id: x.it.uid, parent_uid: pu, sender_role: 'teacher', body });
+      if (error) { good = false; break; }
+    }
+    if (good && (x.parents || []).length) { db.weeklyNotices[x.doneKey] = { at: new Date().toISOString(), type: x.type }; ok++; } else fail++;
+    st.textContent = 'جارٍ الإرسال... ' + (ok + fail) + ' من ' + chosen.length;
+  }
+  app.save();
+  st.textContent = '✓ أُرسل ' + ok + (fail ? ' — تعذّر ' + fail + ' (أعد المحاولة لاحقًا)' : '') + '. تظهر الرسائل لولي الأمر في بوابته.';
+  wnBuild(host).then(() => { const s2 = host.querySelector('#wnStatus'); if (s2) s2.textContent = st.textContent; });
+}
+
+function wnPrint() {
+  const w = wnState.week; if (!w) return;
+  const items = Object.values(wnState.items);
+  const block = (type, title) => {
+    const list = items.filter(x => x.type === type);
+    if (!list.length) return '<h2>' + title + '</h2><p>لا يوجد.</p>';
+    return '<h2>' + title + ' (' + list.length + ')</h2><table><tr><th>م</th><th>الطالب</th><th>الشعبة</th><th>النتيجة</th></tr>' +
+      list.map((x, i) => '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(x.it.name) + '</td><td>' + escapeHtml(x.it.section) + '</td><td>' + x.it.sum + ' / ' + x.it.max + ' (' + Math.round(x.it.pct) + '٪)</td></tr>').join('') + '</table>' +
+      list.map(x => '<div class="letter"><pre>' + escapeHtml(x.ta.value) + '</pre></div>').join('');
+  };
+  const html = '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>' + escapeHtml(w.label) + '</title><style>body{font:14px Tahoma;margin:24px}table{border-collapse:collapse;width:100%;margin-bottom:16px}td,th{border:1px solid #999;padding:5px}h1{font-size:18px}h2{font-size:16px;margin-top:24px}.letter{page-break-inside:avoid;border:1px solid #ccc;border-radius:8px;padding:10px;margin:10px 0}pre{white-space:pre-wrap;font:14px Tahoma;margin:0}</style></head><body><h1>التقرير الأسبوعي — القرآن الكريم — ' + escapeHtml(w.label) + '</h1>' +
+    block('remedial', 'كشف الخطط العلاجية') + block('thanks', 'كشف خطابات الشكر والعرفان') + '<script>window.onload=function(){window.print()}<\/script></body></html>';
+  const win = window.open('', '_blank'); if (!win) { alert('اسمح بالنوافذ المنبثقة للطباعة.'); return; }
+  win.document.write(html); win.document.close();
+}
+
 // ============================================================
 // المزامنة التلقائية الآمنة
 // القاعدة: نقل كامل فقط، ولا يحدث تلقائيًا إلا إذا تغيّر طرف واحد منذ آخر مزامنة:
@@ -882,7 +1351,7 @@ async function fsAutoUpload(local, prevFull) {
   const meta = fsMakeMeta(plan.payload, local, plan);
   await fsPushPayload(plan.payload, meta, prevFull, null);
   // تأكد أن الجهاز لم يتغير أثناء الرفع؛ وإلا تُرفع التعديلات الأحدث في الدورة التالية
-  saveJSON(FS_BASE_KEY, { contentFp: meta.contentFp, fp: meta.fp, at: new Date().toISOString(), kind: 'auto-upload' });
+  saveJSON(FS_BASE_KEY, { contentFp: meta.contentFp, fp: meta.fp, at: new Date().toISOString(), kind: 'auto-upload' }); fsSaveBaseContent(plan.payload);
   if (fsFp(fsReadStoredDb()) !== fsFp(local)) fsAutoAgain = true; // عُدّل أثناء الرفع: تُرفع التعديلات الأحدث في الدورة التالية
   return 'uploaded';
 }
@@ -924,7 +1393,8 @@ async function fsAutoRun(reason) {
     const lc = fsContentFp(local), cc = row.meta.contentFp;
     const localChanged = lc !== base.contentFp, cloudChanged = cc !== base.contentFp;
     if (lc === cc) {
-      if (localChanged || cloudChanged) saveJSON(FS_BASE_KEY, { contentFp: cc, fp: row.meta.fp, at: new Date().toISOString(), kind: 'match' });
+      if (localChanged || cloudChanged) { saveJSON(FS_BASE_KEY, { contentFp: cc, fp: row.meta.fp, at: new Date().toISOString(), kind: 'match' }); fsSaveBaseContent(local); }
+      else fsLoadBaseContent().then(b => { if (!b) fsSaveBaseContent(local); });
       fsBadge('✓ متزامن', 'ok'); return;
     }
     if (localChanged && !cloudChanged) {
@@ -940,7 +1410,7 @@ async function fsAutoRun(reason) {
       await fsAutoReceive(local);
       return;
     }
-    fsBadge('⚠ تعارض: عُدّل هذا الجهاز وجهاز آخر قبل المزامنة. لم يُكتب شيء — افتح «مزامنة الأجهزة»', 'err');
+    fsBadge('⚠ تعارض: عُدّل هذا الجهاز وجهاز آخر قبل المزامنة. لم يُكتب شيء — اضغط هنا ثم «عرض الفروق»', 'err');
   } catch (e) {
     fsBadge('توقفت المزامنة التلقائية دون أي تغيير: ' + e.message, 'err');
   } finally {
@@ -982,12 +1452,13 @@ if (window.__app) fsBoot(); else window.addEventListener('app-ready', fsBoot, { 
 async function renderParentTab(root) {
   const students=uniqueStudents(), semesterOptions=['الأول','الثاني'].map((n,i)=>`<option value="${i}">${n}</option>`).join('');
   const notice=isParentPortalConfigured()?'':'<div class="summary-card"><b>بوابة ولي الأمر لم تُنشر بعد.</b><p class="muted">سننشر parent.html على رابط HTTPS عام، ثم نضع الرابط في PARENT_PORTAL_URL.</p></div>';
-  root.innerHTML=`${notice}<div class="summary-card">الفصل الدراسي لبناء تقارير أولياء الأمور:
+  root.innerHTML=`${notice}<div id="wnHost"></div><div class="summary-card">الفصل الدراسي لبناء تقارير أولياء الأمور:
     <select id="paSem">${semesterOptions}</select><button id="paSyncAll" type="button">مزامنة تقارير أولياء الأمور الآن</button>
     <span id="paBulkStatus" class="muted"></span></div><button id="paLogout" type="button">تسجيل خروج</button>
     <div id="paList" style="overflow-x:auto"></div>`;
   root.querySelector('#paLogout').onclick=async()=>{await supa.auth.signOut();loginBox(root,'parentPortal');};
   root.querySelector('#paSyncAll').onclick=()=>syncReports(root,students);
+  wnRender(root.querySelector('#wnHost'));
 
   let linked=new Set();
   let lastView=new Map();
