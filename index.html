@@ -696,8 +696,8 @@ function studentResults(){
  $('resultsCsv').onclick=()=>{
   const table=resultsExportTable();
   const rows=[...table.rows].map(tr=>[...tr.cells].map(c=>c.textContent.trim()));
-  const name='كشف-نتائج-'+sub.value+'-'+sec.value+'-ف'+(Number(term.value)+1)+'-فترة'+(Number(period.value)+1)+'.tsv';
-  downloadExcelTsv(name,rows);
+  const name='كشف-نتائج-'+sub.value+'-'+sec.value+'-ف'+(Number(term.value)+1)+'-فترة'+(Number(period.value)+1)+'.xlsx';
+  downloadResultsXlsx(name,rows);
  };
  const subject=sub.value,t=Number(term.value),p=Number(period.value),section=sec.value,host=$('studentResultsBody');host.replaceChildren();
  const arr=db.students.filter(st=>(st.subject||'quran')===subject&&(st.section||db.sections[0])===section&&(st.status||'active')==='active').sort((a,b)=>(a.rosterOrder??1e9)-(b.rosterOrder??1e9)||a.name.localeCompare(b.name,'ar'));
@@ -745,13 +745,47 @@ function combinedReport(){
  for(const name of names){const q=find(qStudents,name),i=find(iStudents,name),q1=q?quranPeriodScoreForStudent(t,0,q.id):null,q2=q?quranPeriodScoreForStudent(t,1,q.id):null,c1=i?courseCalc('islamic',t,0,i.id):null,c2=i?courseCalc('islamic',t,1,i.id):null,h1=i?courseHasAcademicData('islamic',t,0,i.id):false,h2=i?courseHasAcademicData('islamic',t,1,i.id):false,i1=c1&&h1?c1.scaled:null,i2=c2&&h2?c2.scaled:null,m1=q1!==null&&c1&&c1.complete&&i1!==null?Math.round((q1+i1)*100)/100:null,m2=q2!==null&&c2&&c2.complete&&i2!==null?Math.round((q2+i2)*100)/100:null,avg=m1!==null&&m2!==null?Math.round((m1+m2)/2*100)/100:null,tr=e('tr');[name,q1??'—',i1??'—',m1??'—',q2??'—',i2??'—',m2??'—',avg??'—'].forEach(v=>tr.append(e('td',String(v))));table.append(tr)}
  wrap.append(table);host.append(wrap)
 }
-// صيغة نصية Unicode UTF-16LE مفصولة بعلامة جدولة، يفتحها Excel العربي مباشرة في أعمدة سليمة.
-function downloadExcelTsv(filename,rows){
- const safe=v=>{let s=String(v??'').replace(/[\t\r\n]+/g,' ').trim();if(/^[=+\-@]/.test(s))s="'"+s;return s};
- const text=rows.map(row=>row.map(safe).join('\t')).join('\r\n');
- const bytes=new Uint8Array(2+text.length*2);bytes[0]=255;bytes[1]=254;
- for(let i=0;i<text.length;i++){const n=text.charCodeAt(i);bytes[2+i*2]=n&255;bytes[3+i*2]=n>>>8}
- download(filename,bytes,'text/tab-separated-values;charset=utf-16le');
+// تنزيل مصنف Excel حقيقي (XLSX) دون مكتبات خارجية أو اتصال بالشبكة.
+// تبقى بيانات الكشف المعروضة كما هي، ويُطبَّق خيار إخفاء المخالفات قبل استدعاء هذه الدالة.
+function downloadResultsXlsx(filename, rows) {
+ const enc = new TextEncoder();
+ const xml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')
+   .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+ const col = n => { let v=''; for(n++;n;n=Math.floor((n-1)/26))v=String.fromCharCode(65+(n-1)%26)+v;return v; };
+ const width = rows.length ? Math.max(...rows.map(r=>r.length)) : 1;
+ const sheetRows=rows.map((row,i)=>'<row r="'+(i+1)+'">'+row.map((value,j)=>{
+   const s=String(value??'').trim(), ref=col(j)+(i+1), style=i===0?' s="1"':'';
+   // لا نحول الأسماء أو القيم المختلطة أو النصوص التي تبدأ بصفر إلى أرقام.
+   if(i>0 && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(s))return '<c r="'+ref+'"'+style+'><v>'+s+'</v></c>';
+   return '<c r="'+ref+'" t="inlineStr"'+style+'><is><t xml:space="preserve">'+xml(s)+'</t></is></c>';
+ }).join('')+'</row>').join('');
+ const cols=Array.from({length:width},(_,j)=>'<col min="'+(j+1)+'" max="'+(j+1)+'" width="'+(j===0?31:20)+'" customWidth="1"/>').join('');
+ const worksheet='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+ '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" rightToLeft="1"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'+
+ '<sheetFormatPr defaultRowHeight="20"/><cols>'+cols+'</cols><sheetData>'+sheetRows+'</sheetData><autoFilter ref="A1:'+col(width-1)+Math.max(rows.length,1)+'"/></worksheet>';
+ const entries=[
+  ['[Content_Types].xml','<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+  ['_rels/.rels','<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+  ['xl/workbook.xml','<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets><sheet name="نتائج الطلاب" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+  ['xl/_rels/workbook.xml.rels','<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+  ['xl/styles.xml','<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="12"/><name val="Arial"/></font><font><b/><sz val="12"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF17694D"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="right" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'],
+  ['xl/worksheets/sheet1.xml',worksheet]
+ ];
+ const crcTable=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?0xEDB88320^(c>>>1):c>>>1;crcTable[n]=c>>>0;}
+ const crc32=data=>{let c=0xFFFFFFFF;for(const b of data)c=crcTable[(c^b)&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
+ const u16=(v,a,o)=>{a[o]=v&255;a[o+1]=(v>>>8)&255;};
+ const u32=(v,a,o)=>{u16(v&65535,a,o);u16((v>>>16)&65535,a,o+2);};
+ const parts=[], central=[];let offset=0;
+ for(const [path,content] of entries){
+  const name=enc.encode(path), data=enc.encode(content),crc=crc32(data);
+  const local=new Uint8Array(30+name.length);u32(0x04034b50,local,0);u16(20,local,4);u16(0x0800,local,6);u16(0,local,8);u32(crc,local,14);u32(data.length,local,18);u32(data.length,local,22);u16(name.length,local,26);local.set(name,30);
+  parts.push(local,data);
+  const c=new Uint8Array(46+name.length);u32(0x02014b50,c,0);u16(20,c,4);u16(20,c,6);u16(0x0800,c,8);u32(crc,c,16);u32(data.length,c,20);u32(data.length,c,24);u16(name.length,c,28);u32(offset,c,42);c.set(name,46);central.push(c);
+  offset+=local.length+data.length;
+ }
+ const centralSize=central.reduce((sum,p)=>sum+p.length,0);const end=new Uint8Array(22);
+ u32(0x06054b50,end,0);u16(entries.length,end,8);u16(entries.length,end,10);u32(centralSize,end,12);u32(offset,end,16);
+ download(filename,new Blob([...parts,...central,end],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 function download(filename,content,type){try{const url=URL.createObjectURL(new Blob([content],{type})),a=e('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);say('طُلب تنزيل الملف؛ تحقق من مجلد التنزيلات.')}catch(err){say('تعذّر التنزيل: '+err.message)}}// Import names locally: OOXML ZIP (xlsx/docx), CSV and UTF-8 text; no network libraries.
 async function zipEntries(file){const buf=await file.arrayBuffer(),dv=new DataView(buf),bytes=new Uint8Array(buf);let end=-1;for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--){if(dv.getUint32(i,true)===0x06054b50){end=i;break}}if(end<0)throw Error('الملف ليس ملف Excel أو Word صالحًا.');const count=dv.getUint16(end+10,true),start=dv.getUint32(end+16,true),decoder=new TextDecoder(),entries=new Map();let off=start;for(let n=0;n<count;n++){if(dv.getUint32(off,true)!==0x02014b50)throw Error('تعذّر قراءة بنية الملف.');const method=dv.getUint16(off+10,true),size=dv.getUint32(off+20,true),nameLen=dv.getUint16(off+28,true),extra=dv.getUint16(off+30,true),comment=dv.getUint16(off+32,true),local=dv.getUint32(off+42,true),name=decoder.decode(bytes.subarray(off+46,off+46+nameLen));entries.set(name,{method,size,local});off+=46+nameLen+extra+comment}return async name=>{const ent=entries.get(name);if(!ent)return null;const off=ent.local;if(dv.getUint32(off,true)!==0x04034b50)throw Error('تعذّر قراءة الملف الداخلي.');const dataStart=off+30+dv.getUint16(off+26,true)+dv.getUint16(off+28,true);const compressed=bytes.slice(dataStart,dataStart+ent.size);if(ent.method===0)return decoder.decode(compressed);if(ent.method!==8||!('DecompressionStream' in window))throw Error('تعذّر فك ضغط الملف في هذا المتصفح.');const stream=new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw'));return decoder.decode(await new Response(stream).arrayBuffer())}}
