@@ -118,11 +118,11 @@ table tbody tr:hover td.name-col{background:#e8f4ed}
 .students-table-wrap{width:100%;overflow-x:auto}
 .students-table select,.students-table button{margin:0}
 .bulk-course-head{display:flex;flex-direction:column;align-items:center;gap:3px}.bulk-course-input{width:42px;min-width:0;box-sizing:border-box;padding:3px 1px;margin:0;text-align:center;direction:ltr;font-size:12px}.bulk-course-btn{padding:3px 2px;margin:0;font-size:10px;white-space:nowrap;background:#e8f3ed;color:#205348}.bulk-course-head>div:first-child{font-weight:bold}#courseBody .unified-course thead tr:nth-child(2) th:not(:first-child){height:75px;vertical-align:top}@media print{.bulk-course-input,.bulk-course-btn{display:none!important}}
-</style><header><h2>سجل درجات الطلاب</h2>متوسطة ذي النورين لتحفيظ القرآن الكريم — نسخة محلية تجريبية</header><section class="no-print"><b>الموعد الدراسي الفعلي:</b> <span id="actual"></span><br><b>الكشف المعروض:</b> <span id="view"></span></section><nav id="mainAreas" class="main-areas no-print" aria-label="الأقسام الرئيسية">
+@media print{body.print-results-mode header,body.print-results-mode nav,body.print-results-mode section,body.print-results-mode>div:not(#resultsPrintSheet){display:none!important}body.print-results-mode #resultsPrintSheet{display:block!important}body.print-results-mode #resultsPrintSheet table{width:100%;border-collapse:collapse;font-size:11px}body.print-results-mode #resultsPrintSheet th,body.print-results-mode #resultsPrintSheet td{border:1px solid #777;padding:5px;text-align:center}body.print-results-mode #resultsPrintSheet td:first-child{text-align:right}body.print-results-mode #resultsPrintSheet h2{text-align:center}body.print-results-mode #resultsPrintSheet{direction:rtl}body.print-results-mode #report{display:none!important}}#resultsPrintSheet{display:none}@media print{#resultsPrintSheet{display:none}}.results-export-choice{background:#f2f7f3;border:1px solid #c6d6cc;padding:7px 10px;border-radius:8px;cursor:pointer} </style><div id="resultsPrintSheet" aria-hidden="true"></div><header><h2>سجل درجات الطلاب</h2>متوسطة ذي النورين لتحفيظ القرآن الكريم — نسخة محلية تجريبية</header><section class="no-print"><b>الموعد الدراسي الفعلي:</b> <span id="actual"></span><br><b>الكشف المعروض:</b> <span id="view"></span></section><nav id="mainAreas" class="main-areas no-print" aria-label="الأقسام الرئيسية">
 <button type="button" data-area="study">رصد الدرجات</button><button type="button" data-area="results">نتائج الطلاب</button><button type="button" data-area="dashboard">لوحة المتابعة</button><button type="button" data-area="students">الطلاب</button>
 <button type="button" data-area="parents">أولياء الأمور</button>
 <button type="button" data-area="data">إدارة بيانات</button>
-</nav><nav id="tabs" class="no-print"></nav><section id="scope" class="no-print"><label class="scope-control">المادة <select id="subjectSelect"><option value="quran">القرآن الكريم</option><option value="islamic">الدراسات الإسلامية</option><option value="tajweed">التجويد</option><option value="life">المهارات الحياتية</option></select></label><label class="scope-control">الشعبة <select id="sectionSelect"></select></label><span id="scopeNote" class="muted"></span></section><section id="studentResults" class="hide"><h3>نتائج الطلاب</h3><p class="muted">القرآن الكريم من ٥٠ والدراسات الإسلامية من ٥٠، ومجموعهما ١٠٠ درجة لكل فترة. الفترة الأولى من الفصل الأول: التسميع /٣٠ والاختبار الآلي /٢٠؛ أما بقية الفترات فالتسميع /١٥ والاختبار /١٠، وتُحوَّل إلى /٥٠. نتائج مستمدة من الرصد دون إدخال جديد، مع احتساب خصم المخالفات مرة واحدة.</p><div class="no-print results-filters"><label>المادة <select id="resultsSubject"><option value="quran">القرآن الكريم</option><option value="islamic">الدراسات الإسلامية</option><option value="tajweed">التجويد</option><option value="life">المهارات الحياتية</option></select></label><label>الشعبة <select id="resultsSection"></select></label><label>الفصل الدراسي <select id="resultsTerm"><option value="0">الأول</option><option value="1">الثاني</option></select></label><label>الفترة <select id="resultsPeriod"><option value="0">الأولى</option><option value="1">الثانية</option></select></label><button id="resultsPrint" type="button">طباعة النتائج</button></div><div id="studentResultsBody"></div></section><section id="dashboard" class="hide"><h3>لوحة المتابعة</h3>
+</nav><nav id="tabs" class="no-print"></nav><section id="scope" class="no-print"><label class="scope-control">المادة <select id="subjectSelect"><option value="quran">القرآن الكريم</option><option value="islamic">الدراسات الإسلامية</option><option value="tajweed">التجويد</option><option value="life">المهارات الحياتية</option></select></label><label class="scope-control">الشعبة <select id="sectionSelect"></select></label><span id="scopeNote" class="muted"></span></section><section id="studentResults" class="hide"><h3>نتائج الطلاب</h3><p class="muted">القرآن الكريم من ٥٠ والدراسات الإسلامية من ٥٠، ومجموعهما ١٠٠ درجة لكل فترة. الفترة الأولى من الفصل الأول: التسميع /٣٠ والاختبار الآلي /٢٠؛ أما بقية الفترات فالتسميع /١٥ والاختبار /١٠، وتُحوَّل إلى /٥٠. نتائج مستمدة من الرصد دون إدخال جديد، مع احتساب خصم المخالفات مرة واحدة.</p><div class="no-print results-filters"><label>المادة <select id="resultsSubject"><option value="quran">القرآن الكريم</option><option value="islamic">الدراسات الإسلامية</option><option value="tajweed">التجويد</option><option value="life">المهارات الحياتية</option></select></label><label>الشعبة <select id="resultsSection"></select></label><label>الفصل الدراسي <select id="resultsTerm"><option value="0">الأول</option><option value="1">الثاني</option></select></label><label>الفترة <select id="resultsPeriod"><option value="0">الأولى</option><option value="1">الثانية</option></select></label><label class="results-export-choice"><input id="resultsShowViolations" type="checkbox"> إظهار المخالفات والخصم في الطباعة والتحميل</label><button id="resultsCsv" type="button">تحميل كشف CSV</button><button id="resultsPrint" type="button">طباعة النتائج / حفظ PDF</button></div><div id="studentResultsBody"></div></section><section id="dashboard" class="hide"><h3>لوحة المتابعة</h3>
 <p class="muted">ملخص سريع لحالة الشعب والرصد. هذه اللوحة للمتابعة أثناء التطوير ولا تغيّر أي درجة.</p>
 <div id="dashboardBody"></div></section><section id="register"><h3>كشف التسميع</h3><p class="muted"></p><div class="scroll"><table><thead id="head"></thead><tbody id="body"></tbody></table></div></section><section id="calendar" class="hide"><h3>التقويم والإجازات</h3><p class="muted">حدد الفصل والفترة والأسبوع من «الكشف المعروض» أعلاه، ثم عيّن أيام الإجازة. تُستبعد الإجازة من عدد الدروس المطلوبة بلا تعويض. لا يمكن اعتماد إجازة في يوم يحتوي على درجات أو غياب قبل مراجعة تلك السجلات؛ لن تُحذف بيانات الطلاب تلقائيًا.</p><div id="calendarDays"></div><p id="calendarNote" class="muted"></p></section><section id="students" class="hide"><h3>الطلاب</h3><div class="no-print"><input id="newSection" placeholder="اسم الشعبة الجديدة"><button id="createSection" type="button">إنشاء شعبة</button></div><p id="studentsScope" class="muted"></p>
 <div id="studentStats" class="student-stats no-print"></div>
@@ -666,13 +666,42 @@ function violationRegister(subject,t,p,defs){
  }
  table.append(tbody);wrap.append(table);return wrap;
 }
+function resultsExportTable(){
+ const original=document.querySelector('#studentResultsBody table');
+ const table=original?original.cloneNode(true):document.createElement('table');
+ const show=$('resultsShowViolations').checked;
+ if(!show){
+  const headings=table.rows[0]?[...table.rows[0].cells]:[];
+  const indexes=headings.map((cell,i)=>/^(المخالفات|الخصم)$/.test(cell.textContent.trim())?i:-1).filter(i=>i>=0).reverse();
+  for(const row of table.rows)for(const index of indexes)if(row.cells[index])row.deleteCell(index);
+ }
+ return table;
+}
 function studentResults(){
  const sub=$('resultsSubject'),sec=$('resultsSection'),term=$('resultsTerm'),period=$('resultsPeriod');
  if(!studentResults.initialized){sub.value=db.activeSubject;term.value=db.view.t;period.value=db.view.p;studentResults.initialized=true}
  const sections=sub.value==='life'?db.sections.filter(isLifeSection):db.sections;
  const old=sec.value||db.activeSection;sec.replaceChildren();for(const v of sections){const opt=e('option',v);opt.value=v;sec.append(opt)}sec.value=sections.includes(old)?old:(sections.includes(db.activeSection)?db.activeSection:sections[0]);
  const rerender=()=>studentResults();for(const input of [sub,sec,term,period])input.onchange=rerender;
- $('resultsPrint').onclick=()=>window.print();
+ // خيار الكشف خاص بالتصدير، ولا يغيّر درجات الطالب أو بياناته.
+ $('resultsPrint').onclick=()=>{
+  const data=resultsExportTable();
+  const sheet=document.getElementById('resultsPrintSheet');sheet.replaceChildren();
+  const heading=e('h2','كشف نتائج الطلاب');
+  const meta=e('p',subjectNames[sub.value]+' — '+sec.value+' — الفصل '+(term.value==='0'?'الأول':'الثاني')+' — الفترة '+(period.value==='0'?'الأولى':'الثانية'));
+  meta.style.textAlign='center';sheet.append(heading,meta,data);
+  document.body.classList.add('print-results-mode');
+  try{window.print()}finally{setTimeout(()=>document.body.classList.remove('print-results-mode'),1500)}
+ };
+ $('resultsCsv').onclick=()=>{
+  const table=resultsExportTable();
+  const rows=[...table.rows].map(tr=>[...tr.cells].map(c=>{
+   let v=c.textContent.trim();if(/^[=+\-@\t\r]/.test(v))v="'"+v;
+   return '"'+v.replace(/"/g,'""')+'"';
+  }).join(';'));
+  const name='كشف-نتائج-'+sub.value+'-'+sec.value+'-ف'+(Number(term.value)+1)+'-فترة'+(Number(period.value)+1)+'.csv';
+  download(name,'\ufeffsep=;\r\n'+rows.join('\r\n'),'text/csv;charset=utf-8');
+ };
  const subject=sub.value,t=Number(term.value),p=Number(period.value),section=sec.value,host=$('studentResultsBody');host.replaceChildren();
  const arr=db.students.filter(st=>(st.subject||'quran')===subject&&(st.section||db.sections[0])===section&&(st.status||'active')==='active').sort((a,b)=>(a.rosterOrder??1e9)-(b.rosterOrder??1e9)||a.name.localeCompare(b.name,'ar'));
  const wrap=e('div');wrap.className='report-scroll';const table=e('table');table.className='group-report results-table';const hr=e('tr');
